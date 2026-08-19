@@ -24,9 +24,9 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 text-emerald-300 text-[9px] font-bold tracking-widest rounded-full border border-emerald-500/20 backdrop-blur-md">
-              <ShieldCheck size={10} className="text-emerald-400" />
-              100% PRIVATE • NO LOGIN
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/10 text-blue-300 text-[9px] font-bold tracking-widest rounded-full border border-blue-500/20 backdrop-blur-md">
+              <ShieldCheck size={10} className="text-blue-400" />
+              ANONYMOUS CLOUD STORAGE
             </div>
           </div>
         </header>

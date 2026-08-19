@@ -5,10 +5,21 @@ interface ConversionListProps {
   files: ConvertedFile[];
   isConverting: boolean;
   progress?: number;
+  onDownloadComplete?: (file: ConvertedFile) => void;
 }
 
-export function ConversionList({ files, isConverting, progress = 0 }: ConversionListProps) {
+export function ConversionList({ files, isConverting, progress = 0, onDownloadComplete }: ConversionListProps) {
   if (files.length === 0 && !isConverting) return null;
+
+  const handleDownload = (file: ConvertedFile) => {
+    // Let the native download start
+    setTimeout(() => {
+      // Release the memory blob
+      URL.revokeObjectURL(file.url);
+      // Remove it from the list and trigger cleanup
+      if (onDownloadComplete) onDownloadComplete(file);
+    }, 1000);
+  };
 
   return (
     <div className="glass-panel rounded-2xl p-4">
@@ -55,6 +66,7 @@ export function ConversionList({ files, isConverting, progress = 0 }: Conversion
                 <a
                   href={file.url}
                   download={file.convertedName}
+                  onClick={() => handleDownload(file)}
                   className="glass-button px-2 py-1 rounded-lg text-[10px] flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                 >
                   <Download size={10} />

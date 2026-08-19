@@ -1,0 +1,47 @@
+{
+  "entities": {
+    "ConversionJob": {
+      "title": "Conversion Job",
+      "description": "Tracks file conversion tasks and their associated Firebase Storage locations.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string"
+        },
+        "originalName": {
+          "type": "string"
+        },
+        "targetFormat": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "processing", "completed", "failed"]
+        },
+        "storagePath": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ownerId",
+        "originalName",
+        "targetFormat",
+        "status"
+      ]
+    }
+  },
+  "firestore": {
+    "/conversionJobs/{jobId}": {
+      "schema": {
+        "$ref": "#/entities/ConversionJob"
+      },
+      "description": "Stores references to files uploaded for conversion."
+    }
+  }
+}

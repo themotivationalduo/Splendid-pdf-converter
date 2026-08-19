@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dropzone } from '../components/Dropzone';
 import { ConversionList } from '../components/ConversionList';
 import { processConversion } from '../lib/universal-converter';
 import { ConvertedFile } from '../types';
-import { LucideIcon, ShieldCheck, X, File as FileIcon } from 'lucide-react';
+import { LucideIcon, ShieldCheck, X, File as FileIcon, Cloud } from 'lucide-react';
+import { auth, loginAnonymously } from '../lib/firebase';
+import { onAuthStateChanged, User } from 'firebase/auth';
 
 interface UniversalConverterPageProps {
   title: string;
@@ -31,6 +33,30 @@ export function UniversalConverterPage({
   const [isConverting, setIsConverting] = useState(false);
   const [conversionProgress, setConversionProgress] = useState(0);
   const [targetFormat, setTargetFormat] = useState(defaultTarget);
+  const [user, setUser] = useState<User | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Automatically authenticate anonymously in the background
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        setUser(currentUser);
+        setAuthError(null);
+      } else {
+        try {
+          await loginAnonymously();
+        } catch (error: any) {
+          console.error("Auth init error:", error);
+          if (error.code === 'auth/admin-restricted-operation') {
+            setAuthError('Anonymous login is disabled in your Firebase project. Please enable "Anonymous" provider in the Firebase Console (Authentication > Sign-in method).');
+          } else {
+            setAuthError(error.message || 'Failed to initialize anonymous session.');
+          }
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   const handleFilesDrop = (droppedFiles: File[]) => {
     setPendingFiles(prev => [...prev, ...droppedFiles]);
@@ -50,10 +76,52 @@ export function UniversalConverterPage({
       const newFiles: ConvertedFile[] = [];
       const total = pendingFiles.length;
 
+      // Import Firebase dynamically only if user is logged in
+      let ref, uploadBytes, getDownloadURL, doc, setDoc, storage, db;
+      if (user) {
+        const storageModule = await import('firebase/storage');
+        ref = storageModule.ref;
+        uploadBytes = storageModule.uploadBytes;
+        getDownloadURL = storageModule.getDownloadURL;
+        
+        const firestoreModule = await import('firebase/firestore');
+        doc = firestoreModule.doc;
+        setDoc = firestoreModule.setDoc;
+        
+        const firebaseModule = await import('../lib/firebase');
+        storage = firebaseModule.storage;
+        db = firebaseModule.db;
+      }
+
       for (let i = 0; i < total; i++) {
         const file = pendingFiles[i];
         try {
           const converted = await processConversion(file, targetFormat);
+          
+          const isHeavy = ['pdf', 'docx', 'doc', 'png', 'jpg', 'jpeg'].includes(targetFormat);
+          if (isHeavy && user && ref && uploadBytes && getDownloadURL && doc && setDoc && storage && db) {
+            const jobId = converted.id;
+            const storageRef = ref(storage, `users/${user.uid}/conversions/${jobId}.${targetFormat}`);
+            
+            // Upload to Cloud Storage
+            await uploadBytes(storageRef, converted.blob);
+            const downloadUrl = await getDownloadURL(storageRef);
+            
+            // Track in Firestore
+            await setDoc(doc(db, 'conversionJobs', jobId), {
+              ownerId: user.uid,
+              originalName: file.name,
+              targetFormat: targetFormat,
+              status: 'completed',
+              storagePath: downloadUrl,
+              createdAt: Date.now(),
+              updatedAt: Date.now()
+            });
+            
+            // Note: We keep the blob URL for the immediate local download, 
+            // but we tracked it in Firebase for heavy processing backup.
+          }
+          
           newFiles.push(converted);
         } catch (err: any) {
           alert(`Failed to convert ${file.name}: ${err.message || 'Format not fully supported locally.'}`);
@@ -68,6 +136,31 @@ export function UniversalConverterPage({
     } finally {
       setIsConverting(false);
       setConversionProgress(0);
+    }
+  };
+
+  const handleDownloadComplete = async (downloadedFile: ConvertedFile) => {
+    // Remove from UI
+    setFiles(prev => prev.filter(f => f.id !== downloadedFile.id));
+    
+    if (!user) return;
+    
+    // Automatically delete from Firebase Storage and Firestore
+    const isHeavy = ['pdf', 'docx', 'doc', 'png', 'jpg', 'jpeg'].includes(downloadedFile.convertedName.split('.').pop() || '');
+    if (isHeavy) {
+      try {
+        const { ref, deleteObject } = await import('firebase/storage');
+        const { doc, deleteDoc } = await import('firebase/firestore');
+        const { storage, db } = await import('../lib/firebase');
+        
+        const ext = downloadedFile.convertedName.split('.').pop();
+        const storageRef = ref(storage, `users/${user.uid}/conversions/${downloadedFile.id}.${ext}`);
+        
+        await deleteObject(storageRef).catch(console.warn);
+        await deleteDoc(doc(db, 'conversionJobs', downloadedFile.id)).catch(console.warn);
+      } catch (err) {
+        console.error("Cleanup failed", err);
+      }
     }
   };
 
@@ -128,7 +221,7 @@ export function UniversalConverterPage({
           </div>
         )}
 
-        <ConversionList files={files} isConverting={isConverting} progress={conversionProgress} />
+        <ConversionList files={files} isConverting={isConverting} progress={conversionProgress} onDownloadComplete={handleDownloadComplete} />
       </div>
 
       <aside className="lg:col-span-5 flex flex-col gap-4">
@@ -157,13 +250,23 @@ export function UniversalConverterPage({
               </div>
             </div>
             
-            <div className="p-3 bg-emerald-500/10 rounded-xl border border-emerald-500/20 text-emerald-200 text-[10px] leading-relaxed">
-              <span className="font-bold flex items-center gap-1.5 mb-1.5">
-                <ShieldCheck size={12} className="text-emerald-400" />
-                ZERO DATA RETENTION
-              </span>
-              No login required. All files are processed completely within your browser and are deleted immediately upon refreshing the page. Your data never touches a server.
-            </div>
+            {authError ? (
+              <div className="p-3 bg-amber-500/10 rounded-xl border border-amber-500/20 text-amber-200 text-[10px] leading-relaxed mt-2">
+                <span className="font-bold flex items-center gap-1.5 mb-1.5">
+                  <X size={12} className="text-amber-400" />
+                  CLOUD BACKUP DISABLED
+                </span>
+                {authError} The app will still function, but heavy files will be processed entirely in your local browser memory without cloud backup.
+              </div>
+            ) : (
+              <div className="p-3 bg-blue-500/10 rounded-xl border border-blue-500/20 text-blue-200 text-[10px] leading-relaxed mt-2">
+                <span className="font-bold flex items-center gap-1.5 mb-1.5">
+                  <Cloud size={12} className="text-blue-400" />
+                  CLOUD STORAGE ACTIVE
+                </span>
+                Heavy files are securely backed up during conversion. No login required (anonymous connection). Files are automatically deleted from the cloud the moment you click download.
+              </div>
+            )}
           </div>
           <button 
             onClick={handleConvert}

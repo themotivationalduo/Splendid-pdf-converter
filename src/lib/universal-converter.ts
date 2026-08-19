@@ -2,7 +2,7 @@ import { PDFDocument } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 import * as XLSX from 'xlsx';
 import mammoth from 'mammoth';
-import { jsPDF } from 'jspdf';
+import html2pdf from 'html2pdf.js';
 import { ConvertedFile } from '../types';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
@@ -14,7 +14,7 @@ export async function processConversion(file: File, targetExt: string): Promise<
   const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
   const targetName = `${baseName}.${targetExt}`;
   
-  // 1. DATA & SPREADSHEETS (using xlsx)
+  // 1. DATA & SPREADSHEETS
   const dataFormats = ['xlsx', 'xls', 'csv', 'json', 'xml', 'ods'];
   if (dataFormats.includes(originalExt) && dataFormats.includes(targetExt)) {
     const arrayBuffer = await file.arrayBuffer();
@@ -30,7 +30,6 @@ export async function processConversion(file: File, targetExt: string): Promise<
       const csv = XLSX.utils.sheet_to_csv(firstSheet);
       blob = new Blob([csv], { type: 'text/csv' });
     } else if (targetExt === 'xml') {
-      // Basic XML wrapper
       const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
       const json: any[] = XLSX.utils.sheet_to_json(firstSheet);
       const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<data>\n${json.map(row => 
@@ -38,15 +37,13 @@ export async function processConversion(file: File, targetExt: string): Promise<
       ).join('\n')}\n</data>`;
       blob = new Blob([xml], { type: 'application/xml' });
     } else {
-      // xlsx, ods
       const out = XLSX.write(workbook, { bookType: targetExt as any, type: 'array' });
       blob = new Blob([out], { type: `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` });
     }
-    
     return { id: generateId(), originalName: file.name, convertedName: targetName, blob, size: blob.size, type: blob.type, url: URL.createObjectURL(blob) };
   }
 
-  // 2. IMAGES (using Canvas)
+  // 2. IMAGES
   const imageFormats = ['png', 'jpg', 'jpeg', 'webp', 'bmp'];
   if ((imageFormats.includes(originalExt) || ['gif', 'svg'].includes(originalExt)) && imageFormats.includes(targetExt)) {
     return new Promise((resolve, reject) => {
@@ -77,54 +74,96 @@ export async function processConversion(file: File, targetExt: string): Promise<
     });
   }
 
-  // 3. DOCUMENTS (PDF, DOCX, TXT)
+  // 3. DOCUMENTS (Preserving Formatting via HTML)
   const docFormats = ['pdf', 'docx', 'doc', 'txt', 'rtf', 'odt', 'epub', 'html'];
   if (docFormats.includes(originalExt) && docFormats.includes(targetExt)) {
-    let extractedText = '';
+    let extractedHtml = '';
     
-    // Extract text from source
     if (originalExt === 'pdf') {
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      
+      let htmlString = '<div style="font-family: sans-serif; font-size: 14px; line-height: 1.5; color: #000;">';
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const content = await page.getTextContent();
-        extractedText += content.items.map((it: any) => it.str).join(' ') + '\n';
+        
+        // Group items roughly by Y-coordinate to recreate lines/paragraphs and preserve layout
+        let lastY = -1;
+        let line = '';
+        content.items.forEach((item: any) => {
+          const y = Math.round(item.transform[5]);
+          if (lastY !== -1 && Math.abs(y - lastY) > 6) { 
+            htmlString += `<p style="margin: 0 0 8px 0;">${line}</p>`;
+            line = item.str;
+          } else {
+            line += (line.length > 0 && !line.endsWith(' ') && !item.str.startsWith(' ') ? ' ' : '') + item.str;
+          }
+          lastY = y;
+        });
+        if (line) htmlString += `<p style="margin: 0 0 8px 0;">${line}</p>`;
+        if (i < pdf.numPages) htmlString += '<div style="page-break-after: always; height: 1px;"></div>';
       }
+      htmlString += '</div>';
+      extractedHtml = htmlString;
     } else if (originalExt === 'docx') {
+      // Use convertToHtml instead of extractRawText to preserve styles, bold, tables, etc.
       const arrayBuffer = await file.arrayBuffer();
-      const result = await mammoth.extractRawText({ arrayBuffer });
-      extractedText = result.value;
+      const result = await mammoth.convertToHtml({ arrayBuffer });
+      extractedHtml = `<div style="font-family: sans-serif; color: #000;">${result.value}</div>`;
+    } else if (originalExt === 'html') {
+      extractedHtml = await file.text();
     } else {
-      // TXT, HTML, RTF, etc (best effort text read)
-      extractedText = await file.text();
+      // TXT, RTF
+      const text = await file.text();
+      extractedHtml = `<div style="font-family: sans-serif; color: #000; white-space: pre-wrap;">${text}</div>`;
     }
     
-    // Write to target
     let blob: Blob;
     if (targetExt === 'pdf') {
-      const doc = new jsPDF();
-      const splitText = doc.splitTextToSize(extractedText, 180);
-      let y = 10;
-      for (let i = 0; i < splitText.length; i++) {
-        if (y > 280) { doc.addPage(); y = 10; }
-        doc.text(splitText[i], 10, y);
-        y += 7;
-      }
-      blob = new Blob([doc.output('arraybuffer')], { type: 'application/pdf' });
+      return new Promise((resolve, reject) => {
+        const container = document.createElement('div');
+        container.innerHTML = extractedHtml;
+        container.style.width = '800px';
+        container.style.padding = '20px';
+        container.style.background = '#FFFFFF';
+        container.style.color = '#000000';
+        document.body.appendChild(container); // Mount temporarily
+
+        html2pdf().from(container).set({
+          margin: 15,
+          filename: targetName,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        }).outputPdf('blob').then((pdfBlob: Blob) => {
+          document.body.removeChild(container); // Cleanup
+          resolve({ id: generateId(), originalName: file.name, convertedName: targetName, blob: pdfBlob, size: pdfBlob.size, type: pdfBlob.type, url: URL.createObjectURL(pdfBlob) });
+        }).catch((err: any) => {
+          if (container.parentNode) document.body.removeChild(container);
+          reject(err);
+        });
+      });
     } else if (targetExt === 'docx' || targetExt === 'doc') {
-      // Basic fallback: saving text as .doc which Word can open
-      const htmlContent = `<html><body><pre>${extractedText}</pre></body></html>`;
-      blob = new Blob([htmlContent], { type: 'application/msword' });
+      // Wrap HTML so Word natively renders it with preserved layout
+      const wordHtml = `
+        <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+        <head><meta charset='utf-8'><title>Export</title></head>
+        <body>${extractedHtml}</body>
+        </html>
+      `;
+      blob = new Blob([wordHtml], { type: 'application/msword' });
+    } else if (targetExt === 'txt') {
+      const temp = document.createElement('div');
+      temp.innerHTML = extractedHtml;
+      blob = new Blob([temp.innerText || temp.textContent || ''], { type: 'text/plain' });
     } else {
-      // TXT, HTML, RTF, etc
-      blob = new Blob([extractedText], { type: 'text/plain' });
+      blob = new Blob([extractedHtml], { type: 'text/html' });
     }
     
     return { id: generateId(), originalName: file.name, convertedName: targetName, blob, size: blob.size, type: blob.type, url: URL.createObjectURL(blob) };
   }
 
   // 4. UNSUPPORTED / SYSTEM FALLBACK
-  // For Exes, APKs, DMGs, or unknown cross-category conversions
   throw new Error('Conversion between these specific formats is structurally limited in browser-only mode.');
 }
