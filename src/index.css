@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+@layer utilities {
+  .glass-panel {
+    @apply bg-white/10 backdrop-blur-xl border border-white/20 shadow-[0_8px_32px_0_rgba(0,0,0,0.1)];
+  }
+  .glass-panel-hover {
+    @apply hover:bg-white/20 transition-all duration-300;
+  }
+  .glass-button {
+    @apply bg-white/20 backdrop-blur-md border border-white/30 text-white shadow-lg hover:bg-white/30 active:scale-95 transition-all duration-200;
+  }
+}
