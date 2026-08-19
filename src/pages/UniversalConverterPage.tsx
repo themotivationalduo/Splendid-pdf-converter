@@ -3,7 +3,7 @@ import { Dropzone } from '../components/Dropzone';
 import { ConversionList } from '../components/ConversionList';
 import { processConversion } from '../lib/universal-converter';
 import { ConvertedFile } from '../types';
-import { LucideIcon } from 'lucide-react';
+import { LucideIcon, ShieldCheck, X, File as FileIcon } from 'lucide-react';
 
 interface UniversalConverterPageProps {
   title: string;
@@ -27,41 +27,61 @@ export function UniversalConverterPage({
   acceptHeader,
 }: UniversalConverterPageProps) {
   const [files, setFiles] = useState<ConvertedFile[]>([]);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [isConverting, setIsConverting] = useState(false);
+  const [conversionProgress, setConversionProgress] = useState(0);
   const [targetFormat, setTargetFormat] = useState(defaultTarget);
 
-  const handleFilesDrop = async (droppedFiles: File[]) => {
+  const handleFilesDrop = (droppedFiles: File[]) => {
+    setPendingFiles(prev => [...prev, ...droppedFiles]);
+  };
+
+  const removePendingFile = (index: number) => {
+    setPendingFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleConvert = async () => {
+    if (pendingFiles.length === 0) return;
+    
     setIsConverting(true);
+    setConversionProgress(0);
     
     try {
       const newFiles: ConvertedFile[] = [];
-      for (const file of droppedFiles) {
+      const total = pendingFiles.length;
+
+      for (let i = 0; i < total; i++) {
+        const file = pendingFiles[i];
         try {
           const converted = await processConversion(file, targetFormat);
           newFiles.push(converted);
         } catch (err: any) {
           alert(`Failed to convert ${file.name}: ${err.message || 'Format not fully supported locally.'}`);
         }
+        // Update progress after each file
+        setConversionProgress(Math.round(((i + 1) / total) * 100));
       }
       setFiles(prev => [...newFiles, ...prev]);
+      setPendingFiles([]); // Clear queue on success
     } catch (error) {
       console.error('Batch failed:', error);
     } finally {
       setIsConverting(false);
+      setConversionProgress(0);
     }
   };
 
   return (
-    <div className="flex flex-col lg:grid lg:grid-cols-12 gap-6 animate-in fade-in duration-500">
-      <div className="lg:col-span-7 flex flex-col gap-6">
-        <div className="glass-panel rounded-3xl p-8 flex flex-col sm:flex-row items-center gap-6 shadow-xl relative overflow-hidden">
+    <div className="flex flex-col lg:grid lg:grid-cols-12 gap-4 animate-in fade-in duration-500">
+      <div className="lg:col-span-7 flex flex-col gap-4">
+        <div className="glass-panel rounded-2xl p-5 flex flex-col sm:flex-row items-center gap-4 shadow-xl relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
-          <div className={`w-16 h-16 rounded-full ${iconBgColor} flex items-center justify-center shrink-0 z-10`}>
-            <Icon size={32} className={iconColor} />
+          <div className={`w-11 h-11 rounded-full ${iconBgColor} flex items-center justify-center shrink-0 z-10`}>
+            <Icon size={22} className={iconColor} />
           </div>
           <div className="text-center sm:text-left z-10">
-            <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">{title}</h1>
-            <p className="text-white/60 text-sm max-w-md">{description}</p>
+            <h1 className="text-xl font-bold text-white mb-1 tracking-tight">{title}</h1>
+            <p className="text-white/60 text-xs max-w-md">{description}</p>
           </div>
         </div>
 
@@ -71,24 +91,61 @@ export function UniversalConverterPage({
           multiple={true}
           label={`Drop files to convert to ${targetFormat.toUpperCase()}`}
         />
-        <ConversionList files={files} isConverting={isConverting} />
+        
+        {/* Pending Files Staging Area */}
+        {pendingFiles.length > 0 && (
+          <div className="glass-panel rounded-2xl p-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <h3 className="font-bold text-white text-base mb-3 flex items-center justify-between">
+              <span>Ready to Convert</span>
+              <span className="text-[10px] text-white/50 uppercase tracking-widest">{pendingFiles.length} Selected</span>
+            </h3>
+            <div className="space-y-2">
+              {pendingFiles.map((file, idx) => {
+                const ext = file.name.split('.').pop()?.toUpperCase() || 'FILE';
+                const sizeStr = file.size > 1024 * 1024 
+                  ? `${(file.size / 1024 / 1024).toFixed(2)} MB` 
+                  : `${(file.size / 1024).toFixed(1)} KB`;
+                return (
+                  <div key={`${file.name}-${idx}`} className="flex items-center gap-3 p-2 bg-indigo-500/10 rounded-xl border border-indigo-500/20 group">
+                    <div className="w-9 h-9 bg-indigo-500/20 rounded-lg flex items-center justify-center text-indigo-300 font-bold text-[10px] shrink-0 border border-indigo-500/30 shadow-inner">
+                      {ext.substring(0, 4)}
+                    </div>
+                    <div className="flex-1 min-w-0 pr-2">
+                      <div className="font-medium text-white text-xs truncate">{file.name}</div>
+                      <div className="text-[10px] text-indigo-200/70">{sizeStr}</div>
+                    </div>
+                    <button 
+                      onClick={() => removePendingFile(idx)}
+                      className="p-1.5 rounded-md hover:bg-white/10 text-white/50 hover:text-white transition-colors"
+                      title="Remove file"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <ConversionList files={files} isConverting={isConverting} progress={conversionProgress} />
       </div>
 
-      <aside className="lg:col-span-5 flex flex-col gap-6">
-        <div className="glass-panel rounded-3xl p-6 shadow-xl flex-1 flex flex-col">
-          <h3 className="text-lg font-bold mb-6 flex items-center gap-2 text-white">
-            <Icon className={`w-5 h-5 ${iconColor}`} />
+      <aside className="lg:col-span-5 flex flex-col gap-4">
+        <div className="glass-panel rounded-2xl p-4 shadow-xl flex-1 flex flex-col">
+          <h3 className="text-base font-bold mb-4 flex items-center gap-2 text-white">
+            <Icon size={14} className={iconColor} />
             Target Format
           </h3>
-          <div className="space-y-6 flex-1">
+          <div className="space-y-4 flex-1">
             <div>
-              <label className="block text-xs font-bold text-white/50 uppercase tracking-widest mb-3">Convert To</label>
-              <div className="grid grid-cols-3 gap-2">
+              <label className="block text-[10px] font-bold text-white/50 uppercase tracking-widest mb-2">Convert To</label>
+              <div className="grid grid-cols-3 gap-1.5">
                 {supportedFormats.map(fmt => (
                   <button
                     key={fmt}
                     onClick={() => setTargetFormat(fmt)}
-                    className={`py-3 px-1 rounded-xl text-sm font-bold border transition-all ${
+                    className={`py-2 px-1 rounded-lg text-xs font-bold border transition-all ${
                       targetFormat === fmt 
                         ? 'bg-indigo-500/30 border-indigo-400 text-white shadow-[0_0_15px_rgba(99,102,241,0.3)] scale-105' 
                         : 'bg-white/5 border-white/10 hover:bg-white/10 text-white/70 hover:scale-105'
@@ -100,13 +157,22 @@ export function UniversalConverterPage({
               </div>
             </div>
             
-            <div className="p-4 bg-indigo-500/10 rounded-xl border border-indigo-500/20 text-indigo-200 text-xs">
-              <span className="font-bold block mb-1">LOCAL PROCESSING</span>
-              Conversions are securely processed using local resources. Highly complex or proprietary binaries might fallback to text extraction or raw conversion depending on browser capability.
+            <div className="p-3 bg-emerald-500/10 rounded-xl border border-emerald-500/20 text-emerald-200 text-[10px] leading-relaxed">
+              <span className="font-bold flex items-center gap-1.5 mb-1.5">
+                <ShieldCheck size={12} className="text-emerald-400" />
+                ZERO DATA RETENTION
+              </span>
+              No login required. All files are processed completely within your browser and are deleted immediately upon refreshing the page. Your data never touches a server.
             </div>
           </div>
-          <button className="glass-button mt-auto w-full py-4 font-bold rounded-xl transition-all">
-            Apply Configuration
+          <button 
+            onClick={handleConvert}
+            disabled={pendingFiles.length === 0 || isConverting}
+            className={`glass-button mt-auto w-full py-2.5 text-sm font-bold rounded-xl transition-all ${
+              pendingFiles.length === 0 || isConverting ? 'opacity-50 cursor-not-allowed' : 'hover:scale-[1.02] shadow-[0_0_15px_rgba(99,102,241,0.4)]'
+            }`}
+          >
+            {isConverting ? 'Processing...' : pendingFiles.length > 0 ? `Convert ${pendingFiles.length} File${pendingFiles.length > 1 ? 's' : ''}` : 'Select Files First'}
           </button>
         </div>
       </aside>

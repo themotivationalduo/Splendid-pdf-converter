@@ -2,18 +2,35 @@ import { useState } from 'react';
 import { BottomNav } from './components/BottomNav';
 import { UniversalConverterPage } from './pages/UniversalConverterPage';
 import { PageType } from './types';
-import { FileText, Database, Image as ImageIcon, Terminal } from 'lucide-react';
+import { FileText, Database, Image as ImageIcon, Terminal, ShieldCheck } from 'lucide-react';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<PageType>('documents');
 
   return (
     <div className="min-h-screen bg-slate-950 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-900/40 via-slate-950 to-slate-950 selection:bg-blue-500/30 font-sans text-white">
-      <main className="min-h-screen relative overflow-x-hidden pb-28 pt-8">
+      <main className="min-h-screen relative overflow-x-hidden pb-20 pt-5">
         {/* Background decorative elements */}
         <div className="fixed top-0 left-1/4 w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[120px] pointer-events-none -translate-y-1/2 z-0" />
         <div className="fixed bottom-1/4 right-0 w-[400px] h-[400px] bg-purple-500/10 rounded-full blur-[120px] pointer-events-none translate-x-1/3 z-0" />
         
+        {/* Global Header */}
+        <header className="relative z-10 w-full max-w-6xl mx-auto px-4 md:px-8 mb-5 flex flex-col sm:flex-row justify-between items-center gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 bg-indigo-500/20 rounded-lg flex items-center justify-center border border-indigo-500/30">
+              <div className="w-3.5 h-3.5 border-2 border-indigo-400 rounded-sm rotate-45"></div>
+            </div>
+            <span className="text-lg font-bold tracking-tight text-white uppercase">Splendid <span className="text-indigo-400 font-medium">All Files Conver</span></span>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 text-emerald-300 text-[9px] font-bold tracking-widest rounded-full border border-emerald-500/20 backdrop-blur-md">
+              <ShieldCheck size={10} className="text-emerald-400" />
+              100% PRIVATE • NO LOGIN
+            </div>
+          </div>
+        </header>
+
         {/* Content */}
         <div className="relative z-10 w-full max-w-6xl mx-auto px-4 md:px-8">
           {currentPage === 'documents' && (

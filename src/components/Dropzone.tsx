@@ -48,7 +48,7 @@ export function Dropzone({ onFilesDrop, accept, multiple = true, label = 'Drag &
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       onClick={() => fileInputRef.current?.click()}
-      className={`glass-panel rounded-3xl p-12 flex flex-col items-center justify-center cursor-pointer border-2 border-dashed transition-all duration-300 ${
+      className={`glass-panel rounded-2xl p-8 flex flex-col items-center justify-center cursor-pointer border-2 border-dashed transition-all duration-300 ${
         isDragging ? 'border-indigo-400 bg-indigo-500/10 scale-[1.02]' : 'border-white/20 hover:border-white/40'
       }`}
     >
@@ -60,14 +60,14 @@ export function Dropzone({ onFilesDrop, accept, multiple = true, label = 'Drag &
         multiple={multiple}
         className="hidden"
       />
-      <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-6 transition-colors ${isDragging ? 'bg-indigo-500/20 text-indigo-300' : 'bg-white/10 text-white'}`}>
-        <UploadCloud size={40} className={isDragging ? 'animate-bounce' : ''} />
+      <div className={`w-14 h-14 rounded-full flex items-center justify-center mb-4 transition-colors ${isDragging ? 'bg-indigo-500/20 text-indigo-300' : 'bg-white/10 text-white'}`}>
+        <UploadCloud size={28} className={isDragging ? 'animate-bounce' : ''} />
       </div>
-      <h2 className="text-2xl font-bold text-white mb-2">{label}</h2>
-      <p className="text-white/60 text-center max-w-sm mb-8">
+      <h2 className="text-lg font-bold text-white mb-1">{label}</h2>
+      <p className="text-white/60 text-center text-xs max-w-sm mb-5">
         Supports {accept.split(',').join(', ')}. Max 500MB per file.
       </p>
-      <button className="glass-button px-8 py-3 rounded-xl font-semibold transition-all">
+      <button className="glass-button px-5 py-2 text-sm rounded-lg font-semibold transition-all">
         Select from Computer
       </button>
     </div>
