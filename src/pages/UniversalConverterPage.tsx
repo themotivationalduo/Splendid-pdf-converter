@@ -96,7 +96,11 @@ export function UniversalConverterPage({
       for (let i = 0; i < total; i++) {
         const file = pendingFiles[i];
         try {
-          const converted = await processConversion(file, targetFormat);
+          const converted = await processConversion(file, targetFormat, (fileProgress) => {
+            const baseProgress = (i / total) * 100;
+            const currentFileProgress = (fileProgress / 100) * (100 / total);
+            setConversionProgress(Math.round(baseProgress + currentFileProgress));
+          });
           
           const isHeavy = ['pdf', 'docx', 'doc', 'png', 'jpg', 'jpeg'].includes(targetFormat);
           if (isHeavy && user && ref && uploadBytes && getDownloadURL && doc && setDoc && storage && db) {
@@ -126,8 +130,6 @@ export function UniversalConverterPage({
         } catch (err: any) {
           alert(`Failed to convert ${file.name}: ${err.message || 'Format not fully supported locally.'}`);
         }
-        // Update progress after each file
-        setConversionProgress(Math.round(((i + 1) / total) * 100));
       }
       setFiles(prev => [...newFiles, ...prev]);
       setPendingFiles([]); // Clear queue on success

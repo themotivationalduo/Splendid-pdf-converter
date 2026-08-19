@@ -5,14 +5,16 @@ import mammoth from 'mammoth';
 import html2pdf from 'html2pdf.js';
 import { ConvertedFile } from '../types';
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
-export async function processConversion(file: File, targetExt: string): Promise<ConvertedFile> {
+export async function processConversion(file: File, targetExt: string, onProgress?: (progress: number) => void): Promise<ConvertedFile> {
   const originalExt = file.name.split('.').pop()?.toLowerCase() || '';
   const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
   const targetName = `${baseName}.${targetExt}`;
+  
+  if (onProgress) onProgress(5);
   
   // 1. DATA & SPREADSHEETS
   const dataFormats = ['xlsx', 'xls', 'csv', 'json', 'xml', 'ods'];
@@ -88,6 +90,9 @@ export async function processConversion(file: File, targetExt: string): Promise<
         const page = await pdf.getPage(i);
         const content = await page.getTextContent();
         
+        // Yield to main thread to prevent UI freezing on heavy PDFs
+        await new Promise(resolve => setTimeout(resolve, 0));
+        
         // Group items roughly by Y-coordinate to recreate lines/paragraphs and preserve layout
         let lastY = -1;
         let line = '';
@@ -103,6 +108,11 @@ export async function processConversion(file: File, targetExt: string): Promise<
         });
         if (line) htmlString += `<p style="margin: 0 0 8px 0;">${line}</p>`;
         if (i < pdf.numPages) htmlString += '<div style="page-break-after: always; height: 1px;"></div>';
+        
+        if (onProgress) {
+          // Progress from 5% up to 80% during text extraction
+          onProgress(5 + Math.round((i / pdf.numPages) * 75));
+        }
       }
       htmlString += '</div>';
       extractedHtml = htmlString;
@@ -121,6 +131,7 @@ export async function processConversion(file: File, targetExt: string): Promise<
     
     let blob: Blob;
     if (targetExt === 'pdf') {
+      if (onProgress) onProgress(85);
       return new Promise((resolve, reject) => {
         const container = document.createElement('div');
         container.innerHTML = extractedHtml;
@@ -138,6 +149,7 @@ export async function processConversion(file: File, targetExt: string): Promise<
           jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
         }).outputPdf('blob').then((pdfBlob: Blob) => {
           document.body.removeChild(container); // Cleanup
+          if (onProgress) onProgress(100);
           resolve({ id: generateId(), originalName: file.name, convertedName: targetName, blob: pdfBlob, size: pdfBlob.size, type: pdfBlob.type, url: URL.createObjectURL(pdfBlob) });
         }).catch((err: any) => {
           if (container.parentNode) document.body.removeChild(container);
@@ -161,6 +173,7 @@ export async function processConversion(file: File, targetExt: string): Promise<
       blob = new Blob([extractedHtml], { type: 'text/html' });
     }
     
+    if (onProgress) onProgress(100);
     return { id: generateId(), originalName: file.name, convertedName: targetName, blob, size: blob.size, type: blob.type, url: URL.createObjectURL(blob) };
   }
 
