@@ -146,13 +146,40 @@ export function UniversalConverterPage({
   }, []);
 
   useEffect(() => {
-    // Check if ConvertAPI configuration is active on server
-    fetch("/api/config")
-      .then(res => res.json())
-      .then(data => {
-        setHasProductionToken(data.hasProductionToken);
-      })
-      .catch(err => console.warn("Failed to fetch API config:", err));
+    // Check if ConvertAPI configuration is active on server or client
+    const checkTokenStatus = async () => {
+      // 1. Check if client-side VITE_ token is available
+      const clientSecret = (
+        (import.meta as any).env?.VITE_CONVERT_API_PRODUCTION_SECRET ||
+        (import.meta as any).env?.VITE_CONVERT_API_SECRET ||
+        (import.meta as any).env?.VITE_CONVERTAPI_SECRET ||
+        (import.meta as any).env?.VITE_CONVERT_API_TOKEN ||
+        (import.meta as any).env?.VITE_CONVERTAPI_TOKEN ||
+        (import.meta as any).env?.VITE_CONVERT_API_KEY ||
+        ""
+      )?.trim();
+
+      if (clientSecret) {
+        setHasProductionToken(true);
+      }
+
+      // 2. Fetch serverless /api/config status
+      try {
+        const res = await fetch("/api/config");
+        if (res.ok) {
+          const data = await res.json();
+          if (data && (data.hasProductionToken || data.configured)) {
+            setHasProductionToken(true);
+          } else if (!clientSecret) {
+            setHasProductionToken(false);
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to fetch /api/config:", err);
+      }
+    };
+
+    checkTokenStatus();
   }, []);
 
   const handleFilesDrop = (droppedFiles: File[]) => {

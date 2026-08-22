@@ -54,60 +54,109 @@ export async function processConversion(
   
   if (onProgress) onProgress(5);
 
-  // Check if ConvertAPI is configured on server and use it
+  // Check client-side token if injected via VITE_
+  const clientToken = (
+    (import.meta as any).env?.VITE_CONVERT_API_PRODUCTION_SECRET ||
+    (import.meta as any).env?.VITE_CONVERT_API_SECRET ||
+    (import.meta as any).env?.VITE_CONVERTAPI_SECRET ||
+    (import.meta as any).env?.VITE_CONVERT_API_TOKEN ||
+    (import.meta as any).env?.VITE_CONVERTAPI_TOKEN ||
+    (import.meta as any).env?.VITE_CONVERT_API_KEY ||
+    ""
+  )?.trim();
+
+  // Check if ConvertAPI is configured on server or client and use it
   if (mode !== 'local') {
     try {
-      const configRes = await fetch("/api/config");
-      if (configRes.ok) {
-        const config = await configRes.json();
-        const hasActiveToken = mode === 'sandbox' ? config.hasSandboxToken : config.hasProductionToken;
-        // Also fallback if the other token exists but target doesn't
-        const canConvert = hasActiveToken || config.hasProductionToken || config.hasSandboxToken;
+      if (onProgress) onProgress(15);
+      const fileData = await fileToBase64(file);
+      if (onProgress) onProgress(35);
+      
+      let convertedData: { fileData: string; fileName?: string; fileSize?: number } | null = null;
 
-        if (canConvert) {
-          if (onProgress) onProgress(10);
-          const fileData = await fileToBase64(file);
-          if (onProgress) onProgress(30);
-          
-          const res = await fetch("/api/convert", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              fileName: file.name,
-              fileData,
-              from: originalExt,
-              to: targetExt,
-              mode
-            })
-          });
-          
-          if (res.ok) {
-            const data = await res.json();
-            const binaryString = window.atob(data.fileData);
-            const len = binaryString.length;
-            const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) {
-              bytes[i] = binaryString.charCodeAt(i);
-            }
-            const responseBlob = new Blob([bytes], { type: getMimeType(targetExt) });
-            if (onProgress) onProgress(100);
-            return {
-              id: generateId(),
-              originalName: file.name,
-              convertedName: targetName,
-              blob: responseBlob,
-              size: responseBlob.size,
-              type: responseBlob.type,
-              url: URL.createObjectURL(responseBlob)
+      // 1. Try Serverless API Route (/api/convert)
+      try {
+        const res = await fetch("/api/convert", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileName: file.name,
+            fileData,
+            from: originalExt,
+            to: targetExt,
+            mode: 'production'
+          })
+        });
+        
+        if (res.ok) {
+          convertedData = await res.json();
+        } else {
+          const errJson = await res.json().catch(() => ({ error: res.statusText }));
+          console.warn("Vercel /api/convert returned non-200:", errJson.error);
+        }
+      } catch (serverErr) {
+        console.warn("Direct /api/convert request failed:", serverErr);
+      }
+
+      // 2. Direct browser ConvertAPI call if clientToken is present and server route didn't convert
+      if (!convertedData && clientToken) {
+        if (onProgress) onProgress(50);
+        console.log("Using direct client-side ConvertAPI execution with VITE token...");
+        const convertApiUrl = `https://v2.convertapi.com/convert/${originalExt}/to/${targetExt}?Secret=${encodeURIComponent(clientToken)}`;
+        const directRes = await fetch(convertApiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            Parameters: [
+              {
+                Name: "File",
+                FileValue: {
+                  Name: file.name,
+                  Data: fileData
+                }
+              },
+              {
+                Name: "StoreFile",
+                Value: false
+              }
+            ]
+          })
+        });
+
+        if (directRes.ok) {
+          const directData = await directRes.json();
+          if (directData.Files && directData.Files.length > 0) {
+            convertedData = {
+              fileName: directData.Files[0].FileName,
+              fileData: directData.Files[0].FileData,
+              fileSize: directData.Files[0].FileSize
             };
-          } else {
-            const errorData = await res.json();
-            console.warn("ConvertAPI conversion error, falling back to local:", errorData.error);
           }
         }
       }
+
+      // If converted successfully via ConvertAPI
+      if (convertedData && convertedData.fileData) {
+        const binaryString = window.atob(convertedData.fileData);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        const responseBlob = new Blob([bytes], { type: getMimeType(targetExt) });
+        if (onProgress) onProgress(100);
+        return {
+          id: generateId(),
+          originalName: file.name,
+          convertedName: targetName,
+          blob: responseBlob,
+          size: responseBlob.size,
+          type: responseBlob.type,
+          url: URL.createObjectURL(responseBlob)
+        };
+      }
     } catch (error) {
-      console.warn("Could not reach ConvertAPI endpoint, using local fallback:", error);
+      console.warn("Could not complete ConvertAPI conversion, falling back to local engine:", error);
     }
   }
   

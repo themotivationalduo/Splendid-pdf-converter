@@ -5,56 +5,82 @@ dotenv.config();
 
 const app = express();
 
-// Body parser setup with 50mb limit for larger files
+// Helper to get ConvertAPI production secret from any possible environment variable name
+export function getConvertApiSecret(): string {
+  const secret = (
+    process.env.CONVERT_API_PRODUCTION_SECRET ||
+    process.env.CONVERT_API_SECRET ||
+    process.env.CONVERTAPI_SECRET ||
+    process.env.CONVERT_API_TOKEN ||
+    process.env.CONVERTAPI_TOKEN ||
+    process.env.CONVERT_API_KEY ||
+    process.env.CONVERTAPI_KEY ||
+    process.env.VITE_CONVERT_API_PRODUCTION_SECRET ||
+    process.env.VITE_CONVERT_API_SECRET ||
+    process.env.VITE_CONVERTAPI_SECRET ||
+    process.env.VITE_CONVERT_API_TOKEN ||
+    process.env.VITE_CONVERTAPI_TOKEN ||
+    process.env.VITE_CONVERT_API_KEY ||
+    process.env.VITE_CONVERTAPI_KEY ||
+    ""
+  ).trim();
+
+  return secret;
+}
+
+// Body parser setup with 50mb limit for large files
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-// API route to check if ConvertAPI secrets are configured
-app.get("/api/config", (req, res) => {
-  res.json({
-    hasProductionToken: !!(process.env.CONVERT_API_SECRET || process.env.CONVERT_API_PRODUCTION_SECRET),
-    hasSandboxToken: !!process.env.CONVERT_API_SANDBOX_SECRET
-  });
+// CORS support
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+  next();
 });
 
-// ConvertAPI proxy conversion endpoint
-app.post("/api/convert", async (req, res) => {
+// Configuration checking handler (handles both /api/config and /config for Vercel rewrites)
+const configHandler = (req: express.Request, res: express.Response) => {
+  const secret = getConvertApiSecret();
+  const hasToken = secret.length > 0;
+
+  res.json({
+    hasProductionToken: hasToken,
+    hasSandboxToken: false,
+    mode: hasToken ? "production" : "local",
+    configured: hasToken
+  });
+};
+
+app.get("/api/config", configHandler);
+app.get("/config", configHandler);
+
+// ConvertAPI proxy conversion handler (handles both /api/convert and /convert for Vercel)
+const convertHandler = async (req: express.Request, res: express.Response) => {
   try {
-    const { fileName, fileData, from, to, mode } = req.body;
+    const { fileName, fileData, from, to } = req.body || {};
 
     if (!fileName || !fileData || !from || !to) {
       return res.status(400).json({ error: "Missing required fields (fileName, fileData, from, to)" });
     }
 
-    let secret = "";
-    if (mode === "sandbox") {
-      secret = process.env.CONVERT_API_SANDBOX_SECRET || "";
-      if (!secret) {
-        // Fallback to production secret if sandbox is not explicitly set
-        secret = process.env.CONVERT_API_SECRET || process.env.CONVERT_API_PRODUCTION_SECRET || "";
-      }
-    } else {
-      secret = process.env.CONVERT_API_SECRET || process.env.CONVERT_API_PRODUCTION_SECRET || "";
-      if (!secret) {
-        // Fallback to sandbox if production is not explicitly set
-        secret = process.env.CONVERT_API_SANDBOX_SECRET || "";
-      }
-    }
+    const secret = getConvertApiSecret();
 
     if (!secret) {
       return res.status(400).json({ 
-        error: "ConvertAPI secret key is not set in environment. Please configure CONVERT_API_PRODUCTION_SECRET or CONVERT_API_SANDBOX_SECRET in your settings/secrets panel." 
+        error: "ConvertAPI production token is not configured in Vercel environment variables. Please add CONVERT_API_PRODUCTION_SECRET or CONVERT_API_SECRET in your Vercel Project Settings > Environment Variables." 
       });
     }
 
-    console.log(`Forwarding conversion to ConvertAPI [${mode || "default"}]: ${from} -> ${to} for file: ${fileName}`);
-
-    const convertApiUrl = `https://v2.convertapi.com/convert/${from}/to/${to}`;
+    const convertApiUrl = `https://v2.convertapi.com/convert/${from.toLowerCase()}/to/${to.toLowerCase()}?Secret=${encodeURIComponent(secret)}`;
     
     const response = await fetch(convertApiUrl, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${secret}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
@@ -65,6 +91,10 @@ app.post("/api/convert", async (req, res) => {
               Name: fileName,
               Data: fileData
             }
+          },
+          {
+            Name: "StoreFile",
+            Value: false
           }
         ]
       })
@@ -87,7 +117,7 @@ app.post("/api/convert", async (req, res) => {
     }
 
     const resultFile = data.Files[0];
-    res.json({
+    return res.json({
       success: true,
       fileName: resultFile.FileName,
       fileData: resultFile.FileData, // Base64 converted file
@@ -96,8 +126,11 @@ app.post("/api/convert", async (req, res) => {
 
   } catch (error: any) {
     console.error("Server API conversion error:", error);
-    res.status(500).json({ error: error.message || "An unexpected error occurred during conversion" });
+    return res.status(500).json({ error: error.message || "An unexpected error occurred during conversion" });
   }
-});
+};
+
+app.post("/api/convert", convertHandler);
+app.post("/convert", convertHandler);
 
 export default app;
