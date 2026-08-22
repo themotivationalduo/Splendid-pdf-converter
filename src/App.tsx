@@ -1,11 +1,37 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BottomNav } from './components/BottomNav';
 import { UniversalConverterPage } from './pages/UniversalConverterPage';
 import { PageType } from './types';
 import { FileText, Database, Image as ImageIcon, Terminal, ShieldCheck } from 'lucide-react';
+import { auth, loginAnonymously } from './lib/firebase';
+import { onAuthStateChanged, User } from 'firebase/auth';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<PageType>('documents');
+  const [user, setUser] = useState<User | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Automatically authenticate anonymously in the background on load for every device
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        setUser(currentUser);
+        setAuthError(null);
+      } else {
+        try {
+          await loginAnonymously();
+        } catch (error: any) {
+          console.error("Auth init error:", error);
+          if (error.code === 'auth/admin-restricted-operation') {
+            setAuthError('Anonymous login is disabled in your Firebase project. Please enable "Anonymous" provider in the Firebase Console (Authentication > Sign-in method).');
+          } else {
+            setAuthError(error.message || 'Failed to initialize anonymous session.');
+          }
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-950 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-900/40 via-slate-950 to-slate-950 selection:bg-blue-500/30 font-sans text-white">
@@ -43,6 +69,8 @@ export default function App() {
               supportedFormats={['pdf', 'docx', 'doc', 'txt', 'rtf', 'odt', 'epub', 'html']}
               defaultTarget="pdf"
               acceptHeader=".pdf,.docx,.doc,.txt,.rtf,.odt,.epub,.html"
+              user={user}
+              authError={authError}
             />
           )}
           {currentPage === 'data' && (
@@ -55,6 +83,8 @@ export default function App() {
               supportedFormats={['xlsx', 'xls', 'csv', 'json', 'xml', 'ods']}
               defaultTarget="csv"
               acceptHeader=".xlsx,.xls,.csv,.json,.xml,.ods"
+              user={user}
+              authError={authError}
             />
           )}
           {currentPage === 'images' && (
@@ -67,6 +97,8 @@ export default function App() {
               supportedFormats={['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'svg']}
               defaultTarget="webp"
               acceptHeader="image/*"
+              user={user}
+              authError={authError}
             />
           )}
           {currentPage === 'system' && (
@@ -79,6 +111,8 @@ export default function App() {
               supportedFormats={['exe', 'apk', 'dmg', 'iso', 'pptx', 'key', 'css', 'js']}
               defaultTarget="js"
               acceptHeader=".exe,.apk,.dmg,.iso,.pptx,.key,.css,.js,.ts,.php,.py"
+              user={user}
+              authError={authError}
             />
           )}
         </div>

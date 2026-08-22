@@ -20,6 +20,14 @@ service cloud.firestore {
              data.get('storagePath', '') is string && data.get('storagePath', '').size() <= 1000;
     }
 
+    function isValidUserLimit(data) {
+      return data.keys().hasAll(['userId', 'conversionsCount', 'lastReset', 'updatedAt']) &&
+             data.keys().size() <= 4 &&
+             data.userId == request.auth.uid &&
+             data.conversionsCount is int && data.conversionsCount >= 0 &&
+             data.lastReset is string && data.lastReset.size() <= 20;
+    }
+
     match /conversionJobs/{jobId} {
       allow read, list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
       
@@ -40,6 +48,26 @@ service cloud.firestore {
                     );
 
       allow delete: if isSignedIn() && existing().ownerId == request.auth.uid;
+    }
+
+    match /userLimits/{userId} {
+      allow read: if isSignedIn() && userId == request.auth.uid;
+      
+      allow create: if isSignedIn() && 
+                    userId == request.auth.uid &&
+                    isValidId(userId) &&
+                    isValidUserLimit(incoming()) &&
+                    incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn() && 
+                    userId == request.auth.uid &&
+                    isValidId(userId) &&
+                    isValidUserLimit(incoming()) &&
+                    incoming().userId == existing().userId &&
+                    incoming().updatedAt == request.time &&
+                    (
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['conversionsCount', 'lastReset', 'updatedAt']))
+                    );
     }
   }
 }

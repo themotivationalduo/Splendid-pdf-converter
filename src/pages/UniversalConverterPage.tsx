@@ -4,8 +4,9 @@ import { ConversionList } from '../components/ConversionList';
 import { processConversion } from '../lib/universal-converter';
 import { ConvertedFile } from '../types';
 import { LucideIcon, ShieldCheck, X, File as FileIcon, Cloud } from 'lucide-react';
-import { auth, loginAnonymously } from '../lib/firebase';
-import { onAuthStateChanged, User } from 'firebase/auth';
+import { User } from 'firebase/auth';
+import confetti from 'canvas-confetti';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface UniversalConverterPageProps {
   title: string;
@@ -16,6 +17,8 @@ interface UniversalConverterPageProps {
   supportedFormats: string[];
   defaultTarget: string;
   acceptHeader: string;
+  user: User | null;
+  authError: string | null;
 }
 
 export function UniversalConverterPage({
@@ -27,17 +30,122 @@ export function UniversalConverterPage({
   supportedFormats,
   defaultTarget,
   acceptHeader,
+  user,
+  authError,
 }: UniversalConverterPageProps) {
   const [files, setFiles] = useState<ConvertedFile[]>([]);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [isConverting, setIsConverting] = useState(false);
   const [conversionProgress, setConversionProgress] = useState(0);
   const [targetFormat, setTargetFormat] = useState(defaultTarget);
-  const [user, setUser] = useState<User | null>(null);
-  const [authError, setAuthError] = useState<string | null>(null);
   const [hasProductionToken, setHasProductionToken] = useState(false);
   const [hasSandboxToken, setHasSandboxToken] = useState(false);
   const [convertMode, setConvertMode] = useState<'production' | 'sandbox'>('production');
+  const [isDraggingWindow, setIsDraggingWindow] = useState(false);
+  const [conversionsCount, setConversionsCount] = useState(0);
+  const [dailyLimit] = useState(5); // 5 free premium conversions per day limit
+
+  useEffect(() => {
+    if (!user) return;
+    
+    let unsubscribe: () => void;
+    
+    const initLimits = async () => {
+      try {
+        const { doc, onSnapshot, setDoc, serverTimestamp } = await import('firebase/firestore');
+        const { db } = await import('../lib/firebase');
+        
+        const docRef = doc(db, 'userLimits', user.uid);
+        const todayStr = new Date().toISOString().split('T')[0];
+        
+        unsubscribe = onSnapshot(docRef, (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data();
+            if (data.lastReset !== todayStr) {
+              // Reset for the new day
+              setDoc(docRef, {
+                userId: user.uid,
+                conversionsCount: 0,
+                lastReset: todayStr,
+                updatedAt: serverTimestamp()
+              }, { merge: true }).catch(err => console.warn("Failed to reset limit:", err));
+              setConversionsCount(0);
+            } else {
+              setConversionsCount(data.conversionsCount || 0);
+            }
+          } else {
+            // Initialize for the first time
+            setDoc(docRef, {
+              userId: user.uid,
+              conversionsCount: 0,
+              lastReset: todayStr,
+              updatedAt: serverTimestamp()
+            }).catch(err => console.warn("Failed to create limit:", err));
+            setConversionsCount(0);
+          }
+        }, (error) => {
+          console.error("Error reading limits:", error);
+        });
+      } catch (err) {
+        console.error("Failed to initialize limits Module:", err);
+      }
+    };
+    
+    initLimits();
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [user]);
+
+  useEffect(() => {
+    let counter = 0;
+
+    const handleDragEnter = (e: DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer && e.dataTransfer.types.includes('Files')) {
+        counter++;
+        setIsDraggingWindow(true);
+      }
+    };
+
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+    };
+
+    const handleDragLeave = (e: DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer && e.dataTransfer.types.includes('Files')) {
+        counter--;
+        if (counter <= 0) {
+          counter = 0;
+          setIsDraggingWindow(false);
+        }
+      }
+    };
+
+    const handleDrop = (e: DragEvent) => {
+      e.preventDefault();
+      counter = 0;
+      setIsDraggingWindow(false);
+
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const droppedFiles = Array.from(e.dataTransfer.files) as File[];
+        setPendingFiles(prev => [...prev, ...droppedFiles]);
+      }
+    };
+
+    window.addEventListener('dragenter', handleDragEnter);
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('dragleave', handleDragLeave);
+    window.addEventListener('drop', handleDrop);
+
+    return () => {
+      window.removeEventListener('dragenter', handleDragEnter);
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('dragleave', handleDragLeave);
+      window.removeEventListener('drop', handleDrop);
+    };
+  }, []);
 
   useEffect(() => {
     // Check if ConvertAPI configuration is active on server
@@ -51,28 +159,6 @@ export function UniversalConverterPage({
         }
       })
       .catch(err => console.warn("Failed to fetch API config:", err));
-  }, []);
-
-  useEffect(() => {
-    // Automatically authenticate anonymously in the background
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      if (currentUser) {
-        setUser(currentUser);
-        setAuthError(null);
-      } else {
-        try {
-          await loginAnonymously();
-        } catch (error: any) {
-          console.error("Auth init error:", error);
-          if (error.code === 'auth/admin-restricted-operation') {
-            setAuthError('Anonymous login is disabled in your Firebase project. Please enable "Anonymous" provider in the Firebase Console (Authentication > Sign-in method).');
-          } else {
-            setAuthError(error.message || 'Failed to initialize anonymous session.');
-          }
-        }
-      }
-    });
-    return () => unsubscribe();
   }, []);
 
   const handleFilesDrop = (droppedFiles: File[]) => {
@@ -113,11 +199,24 @@ export function UniversalConverterPage({
       for (let i = 0; i < total; i++) {
         const file = pendingFiles[i];
         try {
+          const isPremiumCapable = (hasProductionToken || hasSandboxToken);
+          const currentQuotaCount = conversionsCount + i;
+          const usePremium = isPremiumCapable && (currentQuotaCount < dailyLimit);
+          const activeMode = usePremium ? convertMode : 'local';
+
           const converted = await processConversion(file, targetFormat, (fileProgress) => {
             const baseProgress = (i / total) * 100;
             const currentFileProgress = (fileProgress / 100) * (100 / total);
             setConversionProgress(Math.round(baseProgress + currentFileProgress));
-          }, convertMode);
+          }, activeMode);
+          
+          if (usePremium && user && doc && setDoc && db) {
+            const { increment, serverTimestamp } = await import('firebase/firestore');
+            await setDoc(doc(db, 'userLimits', user.uid), {
+              conversionsCount: increment(1),
+              updatedAt: serverTimestamp()
+            }, { merge: true });
+          }
           
           const isHeavy = ['pdf', 'docx', 'doc', 'png', 'jpg', 'jpeg'].includes(targetFormat);
           if (isHeavy && user && ref && uploadBytes && getDownloadURL && doc && setDoc && storage && db) {
@@ -150,6 +249,16 @@ export function UniversalConverterPage({
       }
       setFiles(prev => [...newFiles, ...prev]);
       setPendingFiles([]); // Clear queue on success
+
+      if (newFiles.length > 0) {
+        confetti({
+          particleCount: 80,
+          spread: 65,
+          origin: { y: 0.7 },
+          colors: ['#34d399', '#3b82f6', '#ec4899', '#f59e0b', '#10b981'],
+          disableForReducedMotion: true
+        });
+      }
     } catch (error) {
       console.error('Batch failed:', error);
     } finally {
@@ -338,6 +447,49 @@ export function UniversalConverterPage({
                 Converting using open-source browser libraries. Configure <code className="bg-white/10 px-1 py-0.5 rounded text-[9px] text-white font-mono">CONVERT_API_PRODUCTION_SECRET</code> or <code className="bg-white/10 px-1 py-0.5 rounded text-[9px] text-white font-mono">CONVERT_API_SANDBOX_SECRET</code> in the app settings to upgrade to professional high-fidelity cloud formatting.
               </div>
             )}
+
+            {/* Daily Usage Quota Meter */}
+            { (hasProductionToken || hasSandboxToken) && (
+              <div className="p-3 bg-white/5 rounded-xl border border-white/10 text-white/70 text-[10px] leading-relaxed mt-2 flex flex-col gap-2 shadow-inner">
+                <div className="flex items-center justify-between font-bold">
+                  <span className="flex items-center gap-1.5 text-white/80">
+                    <Cloud size={12} className="text-indigo-400" />
+                    DAILY PREMIUM LIMIT
+                  </span>
+                  <span className={`px-1.5 py-0.5 rounded text-[9px] ${
+                    conversionsCount >= dailyLimit 
+                      ? 'bg-rose-500/20 text-rose-300' 
+                      : 'bg-indigo-500/20 text-indigo-300'
+                  }`}>
+                    {conversionsCount} / {dailyLimit} conversions used
+                  </span>
+                </div>
+                
+                {/* Modern clean progress bar */}
+                <div className="w-full bg-white/5 rounded-full h-1.5 overflow-hidden border border-white/5">
+                  <div 
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      conversionsCount >= dailyLimit 
+                        ? 'bg-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]' 
+                        : conversionsCount >= dailyLimit - 2 
+                        ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]'
+                        : 'bg-gradient-to-r from-blue-500 to-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]'
+                    }`}
+                    style={{ width: `${Math.min(100, (conversionsCount / dailyLimit) * 100)}%` }}
+                  ></div>
+                </div>
+
+                {conversionsCount >= dailyLimit ? (
+                  <p className="text-rose-200/90 text-[9px] leading-relaxed mt-0.5 bg-rose-500/5 p-1.5 rounded border border-rose-500/10">
+                    <strong>⚠️ Limit Reached:</strong> You have used your premium daily conversions. Additional conversions will automatically use our robust <strong>Local Offline Engine</strong>. No limits, totally free!
+                  </p>
+                ) : (
+                  <p className="text-white/40 text-[9px] leading-normal">
+                    Free premium server-side high-fidelity conversions left today: {dailyLimit - conversionsCount}. Limit resets daily.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
           <button 
             onClick={handleConvert}
@@ -350,6 +502,36 @@ export function UniversalConverterPage({
           </button>
         </div>
       </aside>
+
+      <AnimatePresence>
+        {isDraggingWindow && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-950/60 backdrop-blur-md"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ type: "spring", damping: 25, stiffness: 350 }}
+              className="w-full max-w-2xl h-96 glass-panel rounded-3xl border-2 border-dashed border-indigo-400/80 bg-indigo-500/10 flex flex-col items-center justify-center text-center p-8 pointer-events-none shadow-[0_0_50px_rgba(99,102,241,0.25)]"
+            >
+              <div className="w-20 h-20 rounded-full bg-indigo-500/20 border border-indigo-400/40 flex items-center justify-center mb-6 text-indigo-300 animate-bounce">
+                <Cloud size={40} className="stroke-[1.5]" />
+              </div>
+              <h2 className="text-2xl font-extrabold text-white mb-2 tracking-tight">
+                Drop Files to Upload
+              </h2>
+              <p className="text-indigo-200/70 text-sm max-w-md leading-relaxed">
+                Release your files anywhere on this page to stage them for {title}.
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

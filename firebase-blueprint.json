@@ -34,6 +34,31 @@
         "targetFormat",
         "status"
       ]
+    },
+    "UserLimit": {
+      "title": "User Limit",
+      "description": "Tracks daily conversion usage limits per user to control ConvertAPI premium costs.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "conversionsCount": {
+          "type": "integer"
+        },
+        "lastReset": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "userId",
+        "conversionsCount",
+        "lastReset",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -42,6 +67,12 @@
         "$ref": "#/entities/ConversionJob"
       },
       "description": "Stores references to files uploaded for conversion."
+    },
+    "/userLimits/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserLimit"
+      },
+      "description": "Stores daily usage limits and conversion counters for each user."
     }
   }
 }

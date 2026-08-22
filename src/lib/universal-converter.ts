@@ -46,7 +46,7 @@ export async function processConversion(
   file: File, 
   targetExt: string, 
   onProgress?: (progress: number) => void,
-  mode: 'production' | 'sandbox' = 'production'
+  mode: 'production' | 'sandbox' | 'local' = 'production'
 ): Promise<ConvertedFile> {
   const originalExt = file.name.split('.').pop()?.toLowerCase() || '';
   const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
@@ -55,58 +55,60 @@ export async function processConversion(
   if (onProgress) onProgress(5);
 
   // Check if ConvertAPI is configured on server and use it
-  try {
-    const configRes = await fetch("/api/config");
-    if (configRes.ok) {
-      const config = await configRes.json();
-      const hasActiveToken = mode === 'sandbox' ? config.hasSandboxToken : config.hasProductionToken;
-      // Also fallback if the other token exists but target doesn't
-      const canConvert = hasActiveToken || config.hasProductionToken || config.hasSandboxToken;
+  if (mode !== 'local') {
+    try {
+      const configRes = await fetch("/api/config");
+      if (configRes.ok) {
+        const config = await configRes.json();
+        const hasActiveToken = mode === 'sandbox' ? config.hasSandboxToken : config.hasProductionToken;
+        // Also fallback if the other token exists but target doesn't
+        const canConvert = hasActiveToken || config.hasProductionToken || config.hasSandboxToken;
 
-      if (canConvert) {
-        if (onProgress) onProgress(10);
-        const fileData = await fileToBase64(file);
-        if (onProgress) onProgress(30);
-        
-        const res = await fetch("/api/convert", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fileName: file.name,
-            fileData,
-            from: originalExt,
-            to: targetExt,
-            mode
-          })
-        });
-        
-        if (res.ok) {
-          const data = await res.json();
-          const binaryString = window.atob(data.fileData);
-          const len = binaryString.length;
-          const bytes = new Uint8Array(len);
-          for (let i = 0; i < len; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
+        if (canConvert) {
+          if (onProgress) onProgress(10);
+          const fileData = await fileToBase64(file);
+          if (onProgress) onProgress(30);
+          
+          const res = await fetch("/api/convert", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fileName: file.name,
+              fileData,
+              from: originalExt,
+              to: targetExt,
+              mode
+            })
+          });
+          
+          if (res.ok) {
+            const data = await res.json();
+            const binaryString = window.atob(data.fileData);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            const responseBlob = new Blob([bytes], { type: getMimeType(targetExt) });
+            if (onProgress) onProgress(100);
+            return {
+              id: generateId(),
+              originalName: file.name,
+              convertedName: targetName,
+              blob: responseBlob,
+              size: responseBlob.size,
+              type: responseBlob.type,
+              url: URL.createObjectURL(responseBlob)
+            };
+          } else {
+            const errorData = await res.json();
+            console.warn("ConvertAPI conversion error, falling back to local:", errorData.error);
           }
-          const responseBlob = new Blob([bytes], { type: getMimeType(targetExt) });
-          if (onProgress) onProgress(100);
-          return {
-            id: generateId(),
-            originalName: file.name,
-            convertedName: targetName,
-            blob: responseBlob,
-            size: responseBlob.size,
-            type: responseBlob.type,
-            url: URL.createObjectURL(responseBlob)
-          };
-        } else {
-          const errorData = await res.json();
-          console.warn("ConvertAPI conversion error, falling back to local:", errorData.error);
         }
       }
+    } catch (error) {
+      console.warn("Could not reach ConvertAPI endpoint, using local fallback:", error);
     }
-  } catch (error) {
-    console.warn("Could not reach ConvertAPI endpoint, using local fallback:", error);
   }
   
   // 1. DATA & SPREADSHEETS
