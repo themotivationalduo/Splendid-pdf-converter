@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { BottomNav } from './components/BottomNav';
+import { PwaInstallPrompt } from './components/PwaInstallPrompt';
 import { UniversalConverterPage } from './pages/UniversalConverterPage';
 import { PageType } from './types';
 import { FileText, Database, Image as ImageIcon, Terminal, ShieldCheck } from 'lucide-react';
@@ -100,7 +101,8 @@ export default function App() {
             <span className="text-lg font-bold tracking-tight text-white uppercase">Splendid <span className="text-indigo-400 font-medium">All Files Conver</span></span>
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap justify-center">
+            <PwaInstallPrompt />
             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/10 text-blue-300 text-[9px] font-bold tracking-widest rounded-full border border-blue-500/20 backdrop-blur-md">
               <ShieldCheck size={10} className="text-blue-400" />
               ANONYMOUS CLOUD STORAGE

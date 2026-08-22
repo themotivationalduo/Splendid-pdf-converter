@@ -3,10 +3,13 @@
   "short_name": "GlassConverter",
   "description": "100% in-browser file converter using Mirror Glass style.",
   "start_url": "/pdf_converter",
+  "scope": "/",
+  "id": "/",
   "display": "standalone",
   "background_color": "#030712",
   "theme_color": "#4f46e5",
-  "orientation": "portrait",
+  "orientation": "portrait-primary",
+  "categories": ["utilities", "productivity"],
   "icons": [
     {
       "src": "/icon.svg",
@@ -25,6 +28,32 @@
       "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "PDF & Documents",
+      "url": "/pdf_converter",
+      "description": "Convert PDF, DOCX, TXT, EPUB",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Images Converter",
+      "url": "/image_converter",
+      "description": "Convert PNG, JPG, WEBP, SVG",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Data & Spreadsheets",
+      "url": "/data_converter",
+      "description": "Convert CSV, JSON, XML, Excel",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Code & System",
+      "url": "/system_converter",
+      "description": "Convert Code, System & Media",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
     }
   ]
 }
