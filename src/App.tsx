@@ -6,10 +6,61 @@ import { FileText, Database, Image as ImageIcon, Terminal, ShieldCheck } from 'l
 import { auth, loginAnonymously } from './lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 
+const PATH_TO_PAGE: Record<string, PageType> = {
+  '/home': 'documents',
+  '/pdf_converter': 'documents',
+  '/documents': 'documents',
+  '/data_converter': 'data',
+  '/data': 'data',
+  '/image_converter': 'images',
+  '/images': 'images',
+  '/system_converter': 'system',
+  '/system': 'system',
+};
+
+const PAGE_TO_PATH: Record<PageType, string> = {
+  'documents': '/pdf_converter',
+  'data': '/data_converter',
+  'images': '/image_converter',
+  'system': '/system_converter',
+};
+
 export default function App() {
   const [currentPage, setCurrentPage] = useState<PageType>('documents');
   const [user, setUser] = useState<User | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // URL Path Synchronizer & Router Setup
+    const handleUrlChange = () => {
+      const path = window.location.pathname.toLowerCase();
+      if (path === '/' || path === '') {
+        setCurrentPage('documents');
+        window.history.replaceState(null, '', '/pdf_converter');
+      } else if (PATH_TO_PAGE[path]) {
+        setCurrentPage(PATH_TO_PAGE[path]);
+      } else {
+        // Unknown route fallback to /pdf_converter
+        setCurrentPage('documents');
+        window.history.replaceState(null, '', '/pdf_converter');
+      }
+    };
+
+    // Perform initial path sync
+    handleUrlChange();
+
+    // Listen to window navigation (popstate)
+    window.addEventListener('popstate', handleUrlChange);
+    return () => window.removeEventListener('popstate', handleUrlChange);
+  }, []);
+
+  const navigateToPage = (page: PageType) => {
+    setCurrentPage(page);
+    const path = PAGE_TO_PATH[page];
+    if (window.location.pathname !== path) {
+      window.history.pushState(null, '', path);
+    }
+  };
 
   useEffect(() => {
     // Automatically authenticate anonymously in the background on load for every device
@@ -118,7 +169,7 @@ export default function App() {
         </div>
       </main>
       
-      <BottomNav currentPage={currentPage} onPageChange={setCurrentPage} />
+      <BottomNav currentPage={currentPage} onPageChange={navigateToPage} />
     </div>
   );
 }

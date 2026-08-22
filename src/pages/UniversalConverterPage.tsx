@@ -39,8 +39,6 @@ export function UniversalConverterPage({
   const [conversionProgress, setConversionProgress] = useState(0);
   const [targetFormat, setTargetFormat] = useState(defaultTarget);
   const [hasProductionToken, setHasProductionToken] = useState(false);
-  const [hasSandboxToken, setHasSandboxToken] = useState(false);
-  const [convertMode, setConvertMode] = useState<'production' | 'sandbox'>('production');
   const [isDraggingWindow, setIsDraggingWindow] = useState(false);
   const [conversionsCount, setConversionsCount] = useState(0);
   const [dailyLimit] = useState(5); // 5 free premium conversions per day limit
@@ -153,10 +151,6 @@ export function UniversalConverterPage({
       .then(res => res.json())
       .then(data => {
         setHasProductionToken(data.hasProductionToken);
-        setHasSandboxToken(data.hasSandboxToken);
-        if (!data.hasProductionToken && data.hasSandboxToken) {
-          setConvertMode('sandbox');
-        }
       })
       .catch(err => console.warn("Failed to fetch API config:", err));
   }, []);
@@ -199,10 +193,10 @@ export function UniversalConverterPage({
       for (let i = 0; i < total; i++) {
         const file = pendingFiles[i];
         try {
-          const isPremiumCapable = (hasProductionToken || hasSandboxToken);
+          const isPremiumCapable = hasProductionToken;
           const currentQuotaCount = conversionsCount + i;
           const usePremium = isPremiumCapable && (currentQuotaCount < dailyLimit);
-          const activeMode = usePremium ? convertMode : 'local';
+          const activeMode = usePremium ? 'production' : 'local';
 
           const converted = await processConversion(file, targetFormat, (fileProgress) => {
             const baseProgress = (i / total) * 100;
@@ -396,60 +390,31 @@ export function UniversalConverterPage({
               </div>
             )}
 
-            {/* ConvertAPI Mode Selector */}
-            {(hasProductionToken || hasSandboxToken) ? (
-              <div className="p-3 bg-emerald-500/10 rounded-xl border border-emerald-500/20 text-emerald-200 text-[10px] leading-relaxed mt-2 flex flex-col gap-2">
-                <span className="font-bold flex items-center justify-between gap-1.5">
-                  <span className="flex items-center gap-1.5">
-                    <ShieldCheck size={12} className="text-emerald-400" />
-                    CONVERTAPI ENGINE ACTIVE
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold uppercase text-[8px]">
-                    {convertMode}
-                  </span>
+            {/* Active Mode Notice Block */}
+            {hasProductionToken && conversionsCount < dailyLimit ? (
+              <div className="p-3 bg-emerald-500/10 rounded-xl border border-emerald-500/20 text-emerald-200 text-[10px] leading-relaxed mt-2 flex flex-col gap-1 shadow-inner animate-in fade-in duration-300">
+                <span className="font-bold flex items-center gap-1.5 text-emerald-300 uppercase tracking-wider text-[9px]">
+                  <ShieldCheck size={12} className="text-emerald-400" />
+                  Premium API Mode Active
                 </span>
-                <p className="text-white/70">
-                  Premium high-fidelity server-side conversion is active. Choose your conversion key environment:
+                <p className="text-white/70 text-[9px] leading-relaxed">
+                  High-fidelity conversion is running via server-side API. Your files are beautifully rendered in the cloud.
                 </p>
-                <div className="grid grid-cols-2 gap-1.5 mt-1">
-                  <button
-                    onClick={() => setConvertMode('production')}
-                    className={`py-1 px-2 rounded-lg text-[9px] font-bold border transition-all ${
-                      convertMode === 'production'
-                        ? 'bg-emerald-500/25 border-emerald-400 text-emerald-100 shadow-[0_0_8px_rgba(16,185,129,0.3)]'
-                        : 'bg-white/5 border-white/10 text-white/40 hover:bg-white/10 hover:text-white/60'
-                    } ${!hasProductionToken ? 'opacity-30 cursor-not-allowed' : ''}`}
-                    disabled={!hasProductionToken}
-                    title={!hasProductionToken ? "Production key is not configured" : "Switch to Production Environment"}
-                  >
-                    🚀 Production {!hasProductionToken && "(Off)"}
-                  </button>
-                  <button
-                    onClick={() => setConvertMode('sandbox')}
-                    className={`py-1 px-2 rounded-lg text-[9px] font-bold border transition-all ${
-                      convertMode === 'sandbox'
-                        ? 'bg-emerald-500/25 border-emerald-400 text-emerald-100 shadow-[0_0_8px_rgba(16,185,129,0.3)]'
-                        : 'bg-white/5 border-white/10 text-white/40 hover:bg-white/10 hover:text-white/60'
-                    } ${!hasSandboxToken ? 'opacity-30 cursor-not-allowed' : ''}`}
-                    disabled={!hasSandboxToken}
-                    title={!hasSandboxToken ? "Sandbox key is not configured" : "Switch to Sandbox Environment"}
-                  >
-                    🧪 Sandbox {!hasSandboxToken && "(Off)"}
-                  </button>
-                </div>
               </div>
             ) : (
-              <div className="p-3 bg-white/5 rounded-xl border border-white/10 text-white/60 text-[10px] leading-relaxed mt-2">
-                <span className="font-bold flex items-center gap-1.5 mb-1.5">
-                  <ShieldCheck size={12} className="text-white/40" />
-                  LOCAL OFFLINE ENGINE
+              <div className="p-3 bg-indigo-500/10 rounded-xl border border-indigo-500/20 text-indigo-200 text-[10px] leading-relaxed mt-2 flex flex-col gap-1 shadow-inner animate-in fade-in duration-300">
+                <span className="font-bold flex items-center gap-1.5 text-indigo-300 uppercase tracking-wider text-[9px]">
+                  <ShieldCheck size={12} className="text-indigo-400" />
+                  Local Browser Mode Active
                 </span>
-                Converting using open-source browser libraries. Configure <code className="bg-white/10 px-1 py-0.5 rounded text-[9px] text-white font-mono">CONVERT_API_PRODUCTION_SECRET</code> or <code className="bg-white/10 px-1 py-0.5 rounded text-[9px] text-white font-mono">CONVERT_API_SANDBOX_SECRET</code> in the app settings to upgrade to professional high-fidelity cloud formatting.
+                <p className="text-white/60 text-[9px] leading-relaxed">
+                  Your files are processed safely in your local browser memory. 100% offline, zero data leaves your device.
+                </p>
               </div>
             )}
 
             {/* Daily Usage Quota Meter */}
-            { (hasProductionToken || hasSandboxToken) && (
+            { hasProductionToken && (
               <div className="p-3 bg-white/5 rounded-xl border border-white/10 text-white/70 text-[10px] leading-relaxed mt-2 flex flex-col gap-2 shadow-inner">
                 <div className="flex items-center justify-between font-bold">
                   <span className="flex items-center gap-1.5 text-white/80">
@@ -481,7 +446,7 @@ export function UniversalConverterPage({
 
                 {conversionsCount >= dailyLimit ? (
                   <p className="text-rose-200/90 text-[9px] leading-relaxed mt-0.5 bg-rose-500/5 p-1.5 rounded border border-rose-500/10">
-                    <strong>⚠️ Limit Reached:</strong> You have used your premium daily conversions. Additional conversions will automatically use our robust <strong>Local Offline Engine</strong>. No limits, totally free!
+                    <strong>⚠️ Limit Reached:</strong> Premium daily conversions used. Conversions will continue automatically via our robust local engine.
                   </p>
                 ) : (
                   <p className="text-white/40 text-[9px] leading-normal">
