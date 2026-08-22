@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <!-- Definitions for Gradients and Filters -->
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b0f19" />
+      <stop offset="100%" stop-color="#020408" />
+    </linearGradient>
+
+    <!-- Glowing Indigo Aura -->
+    <radialGradient id="auraGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#4f46e5" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#4f46e5" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Translucent Glass Surface -->
+    <linearGradient id="glassGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.15" />
+      <stop offset="40%" stop-color="#ffffff" stop-opacity="0.03" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.08" />
+    </linearGradient>
+
+    <!-- Glass Rim/Border Reflection -->
+    <linearGradient id="rimGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.4" />
+      <stop offset="25%" stop-color="#ffffff" stop-opacity="0.1" />
+      <stop offset="75%" stop-color="#4f46e5" stop-opacity="0.15" />
+      <stop offset="100%" stop-color="#06b6d4" stop-opacity="0.4" />
+    </linearGradient>
+
+    <!-- Cyan Glowing Arrow Gradient -->
+    <linearGradient id="arrowCyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#22d3ee" />
+      <stop offset="100%" stop-color="#0891b2" />
+    </linearGradient>
+
+    <!-- Indigo Glowing Arrow Gradient -->
+    <linearGradient id="arrowIndigo" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#818cf8" />
+      <stop offset="100%" stop-color="#4f46e5" />
+    </linearGradient>
+
+    <!-- High-end Drop Shadow -->
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#000000" flood-opacity="0.65" />
+    </filter>
+
+    <!-- Neon Glow -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Maskable / Safety Zone Guide (Hidden by default, used for standard rounded corners) -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)" />
+
+  <!-- Ambient Light Aura -->
+  <circle cx="256" cy="256" r="220" fill="url(#auraGrad)" />
+
+  <!-- The Floating Glass Frame -->
+  <g filter="url(#shadow)">
+    <!-- Base Glass Plate -->
+    <rect x="96" y="96" width="320" height="320" rx="72" fill="url(#glassGrad)" />
+    
+    <!-- Crisp Outer Glass Border -->
+    <rect x="96" y="96" width="320" height="320" rx="72" fill="none" stroke="url(#rimGrad)" stroke-width="2.5" />
+  </g>
+
+  <!-- Dynamic Converter Graphics (Glassmorphic Arrows) -->
+  <g transform="translate(136, 136)">
+    <!-- Cyan Upper Arrow pointing Right-ish / Conversion loop -->
+    <path d="M 40,80 L 160,80 L 120,40 M 160,80 L 120,120" 
+          fill="none" 
+          stroke="url(#arrowCyan)" 
+          stroke-width="24" 
+          stroke-linecap="round" 
+          stroke-linejoin="round"
+          filter="url(#glow)" />
+
+    <!-- Indigo Lower Arrow pointing Left-ish / Conversion loop -->
+    <path d="M 200,160 L 80,160 L 120,120 M 80,160 L 120,200" 
+          fill="none" 
+          stroke="url(#arrowIndigo)" 
+          stroke-width="24" 
+          stroke-linecap="round" 
+          stroke-linejoin="round"
+          filter="url(#glow)" />
+  </g>
+
+  <!-- Diagonal Highlights (Simulating reflective light cuts on glass) -->
+  <path d="M 110,110 L 180,110" stroke="#ffffff" stroke-width="4" stroke-linecap="round" opacity="0.4" />
+  <path d="M 110,110 L 110,180" stroke="#ffffff" stroke-width="4" stroke-linecap="round" opacity="0.4" />
+  <circle cx="110" cy="110" r="4" fill="#ffffff" opacity="0.6" />
+</svg>
