@@ -231,12 +231,14 @@ export function UniversalConverterPage({
             setConversionProgress(Math.round(baseProgress + currentFileProgress));
           }, activeMode);
           
+          // Non-blocking quota increment & background cloud sync
           if (usePremium && user && doc && setDoc && db) {
-            const { increment, serverTimestamp } = await import('firebase/firestore');
-            await setDoc(doc(db, 'userLimits', user.uid), {
-              conversionsCount: increment(1),
-              updatedAt: serverTimestamp()
-            }, { merge: true });
+            import('firebase/firestore').then(({ increment, serverTimestamp }) => {
+              setDoc(doc(db, 'userLimits', user.uid), {
+                conversionsCount: increment(1),
+                updatedAt: serverTimestamp()
+              }, { merge: true }).catch(err => console.warn("Quota counter update notice:", err));
+            }).catch(console.warn);
           }
           
           const isHeavy = ['pdf', 'docx', 'doc', 'png', 'jpg', 'jpeg'].includes(targetFormat);
@@ -244,27 +246,27 @@ export function UniversalConverterPage({
             const jobId = converted.id;
             const storageRef = ref(storage, `users/${user.uid}/conversions/${jobId}.${targetFormat}`);
             
-            // Upload to Cloud Storage
-            await uploadBytes(storageRef, converted.blob);
-            const downloadUrl = await getDownloadURL(storageRef);
-            
-            // Track in Firestore
-            await setDoc(doc(db, 'conversionJobs', jobId), {
-              ownerId: user.uid,
-              originalName: file.name,
-              targetFormat: targetFormat,
-              status: 'completed',
-              storagePath: downloadUrl,
-              createdAt: Date.now(),
-              updatedAt: Date.now()
-            });
-            
-            // Note: We keep the blob URL for the immediate local download, 
-            // but we tracked it in Firebase for heavy processing backup.
+            // Asynchronously sync to Cloud Storage in background without blocking the UI flow
+            uploadBytes(storageRef, converted.blob)
+              .then(async () => {
+                const downloadUrl = await getDownloadURL(storageRef);
+                const { serverTimestamp } = await import('firebase/firestore');
+                await setDoc(doc(db, 'conversionJobs', jobId), {
+                  ownerId: user.uid,
+                  originalName: file.name,
+                  targetFormat: targetFormat,
+                  status: 'completed',
+                  storagePath: downloadUrl,
+                  createdAt: serverTimestamp(),
+                  updatedAt: serverTimestamp()
+                });
+              })
+              .catch(err => console.warn("Background backup notice (non-fatal):", err));
           }
           
           newFiles.push(converted);
         } catch (err: any) {
+          console.error(`Conversion error for ${file.name}:`, err);
           alert(`Failed to convert ${file.name}: ${err.message || 'Format not fully supported locally.'}`);
         }
       }
